@@ -35,9 +35,11 @@
 import argparse
 import fileinput
 import os
+from os.path import isfile
 import re
 import sys
 import time
+from pathlib import Path
 
 
 #
@@ -373,8 +375,8 @@ def dump_path_ascii(path, reverse, **kwargs):
     if truncated or externs:
         ascii_path += ';\n"{}"{}{}'. \
                       format(function if not reverse else path[-1],
-                             " [color=gray66, style=dashed]" if externs else "",
-                             " [color=red]" if truncated else "")
+                             " [color=gray66, fontcolor=gray20, style=dashed]" if externs else "",
+                             " [color=tomato1, fontcolor=tomato3, style=dashed]" if truncated else "")
 
     print_buf(std_buf, ascii_path + ";")
 
@@ -454,7 +456,7 @@ def dump_path(path, functions, function_name, **kwargs):
             dump_path_ascii(path + [function_name, caller], reverse_path,
                             externs=True, stdio_buffer=std_buf)
         else:
-            print_buf(std_buf, '"{}" [color=red];'.
+            print_buf(std_buf, '"{}" [color=tomato1, fontcolor=tomato3, style=dashed];'.
                       format(function_name))
 
     #
@@ -533,7 +535,7 @@ def full_call_graph(functions, **kwargs):
                     print_buf(std_buf, '"{}" -> "{}";'.format(func, caller))
 
                     if caller not in functions:
-                        print_buf(std_buf, '"{}" [color=gray66, style=dashed]'.
+                        print_buf(std_buf, '"{}" [color=gray66, fontcolor=gray20, style=dashed]'.
                                   format(caller))
 
                     printed_functions += 1
@@ -585,7 +587,7 @@ def main():
     parser.add_argument("--unit-test", help=argparse.SUPPRESS,
                         action="store_true")
 
-    parser.add_argument("RTLFILE", help="GCCs RTL .expand file", nargs="+")
+    parser.add_argument("RTLPATHS", help="GCCs RTL .expand paths (files or directories)", nargs="+")
 
     parser.parse_args()
     config = parser.parse_args()
@@ -620,13 +622,22 @@ def main():
                   "--caller or --callee!")
         return 1
 
+    rtl_files = []
     #
     # Check if all files exist
     #
-    for file in config.RTLFILE:
-        if not os.path.isfile(file) or not os.access(file, os.R_OK):
-            print_err("ERROR: Can't open rtl file, \"{}\"!".format(file))
+    for path in config.RTLPATHS:
+        if os.path.isdir(path):
+            rtl_files += list(Path(path).rglob("*.expand"))
+        elif os.path.isfile(path) and os.access(path, os.R_OK):
+            rtl_files.append(path)
+        else:
+            print_err("ERROR: Can't parse rtl path, \"{}\"!".format(path))
             return 1
+
+    if len(rtl_files) == 0:
+        print_err("ERROR: No rtl files got!")
+        return 1
 
     #
     # Regex to extract functions
@@ -642,7 +653,7 @@ def main():
     #
     function_name = ""
     start_time = time.time()
-    for line in fileinput.input(config.RTLFILE):
+    for line in fileinput.input(rtl_files):
         #
         # Find function entry point
         #
@@ -685,7 +696,7 @@ def main():
 
     if config.debug:
         print_dbg("[PERF] Processing {} RTL files took {:.9f} seconds".format(
-            len(config.RTLFILE), time.time() - start_time))
+            len(rtl_files), time.time() - start_time))
         print_dbg("[PERF] Found {} functions".format(len(functions)))
     #
     # Build callee data
